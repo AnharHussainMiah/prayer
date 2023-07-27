@@ -1,6 +1,6 @@
 // https://github.com/radcheb/Adhan/tree/master/C/adhan/src
-use chrono::{DateTime, NaiveDate, Utc, Duration, Datelike, Timelike};
-use anyhow::{ Result, anyhow };
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use std::error::Error;
 
 const PI: f64 = 3.14159265358979323846;
@@ -42,8 +42,8 @@ enum HighLatitudeRule {
 }
 
 enum ShadowLength {
-    Single,
-    Double,
+    Single = 1,
+    Double = 2,
 }
 
 struct PrayerAdjustments {
@@ -307,7 +307,6 @@ struct SolarCoordinates {
     apparent_side_realtime: f64,
 }
 
-
 type JulianDay = f64;
 
 impl SolarCoordinates {
@@ -352,13 +351,17 @@ struct SolarTime {
 }
 
 impl SolarTime {
-    fn new(time: TimeComponent, date: DateComponent, coordinates: Coordinates) -> Result<Self, Box<dyn Error>> {
+    fn new(
+        time: TimeComponent,
+        date: &DateComponent,
+        coordinates: Coordinates,
+    ) -> Result<Self, Box<dyn Error>> {
         let maybe_datetime = NaiveDate::from_ymd_opt(date.year, date.month as u32, date.day as u32)
-                                        .ok_or(anyhow!("oops"))?
-                                        .and_hms_opt(time.hours as u32, time.minutes as u32, time.seconds as u32).ok_or(anyhow!("on no"))?;
+            .ok_or(anyhow!("oops"))?
+            .and_hms_opt(time.hours as u32, time.minutes as u32, time.seconds as u32)
+            .ok_or(anyhow!("on no"))?;
 
         let today = DateTime::<Utc>::from_utc(maybe_datetime, Utc);
-
 
         let tomorrow = today + Duration::days(1);
         let yesterday = today + Duration::days(-1);
@@ -384,24 +387,50 @@ impl SolarTime {
             tomorrow.hour().into(),
         ));
 
-        let approximate_transit = get_approximate_transit(coordinates.longitude, solar.apparent_side_realtime,
-            solar.right_ascension);
+        let approximate_transit = get_approximate_transit(
+            coordinates.longitude,
+            solar.apparent_side_realtime,
+            solar.right_ascension,
+        );
 
         let solarAltitude = -50.0 / 60.0;
 
-        let transit = corrected_transit(approximate_transit, coordinates.longitude,
-        solar.apparent_side_realtime, solar.right_ascension, prev_solar.right_ascension,
-        next_solar.right_ascension);
+        let transit = corrected_transit(
+            approximate_transit,
+            coordinates.longitude,
+            solar.apparent_side_realtime,
+            solar.right_ascension,
+            prev_solar.right_ascension,
+            next_solar.right_ascension,
+        );
 
-        let sunrise = corrected_hour_angle(approximate_transit, solarAltitude,
-        coordinates.clone(), false, solar.apparent_side_realtime, solar.right_ascension,
-        prev_solar.right_ascension, next_solar.right_ascension, solar.declination,
-        prev_solar.declination, next_solar.declination);
+        let sunrise = corrected_hour_angle(
+            approximate_transit,
+            solarAltitude,
+            coordinates.clone(),
+            false,
+            solar.apparent_side_realtime,
+            solar.right_ascension,
+            prev_solar.right_ascension,
+            next_solar.right_ascension,
+            solar.declination,
+            prev_solar.declination,
+            next_solar.declination,
+        );
 
-        let sunset = corrected_hour_angle(approximate_transit, solarAltitude,
-        coordinates.clone(), true, solar.apparent_side_realtime, solar.right_ascension,
-        prev_solar.right_ascension, next_solar.right_ascension, solar.declination,
-        prev_solar.declination, next_solar.declination);
+        let sunset = corrected_hour_angle(
+            approximate_transit,
+            solarAltitude,
+            coordinates.clone(),
+            true,
+            solar.apparent_side_realtime,
+            solar.right_ascension,
+            prev_solar.right_ascension,
+            next_solar.right_ascension,
+            solar.declination,
+            prev_solar.declination,
+            next_solar.declination,
+        );
 
         Ok(SolarTime {
             transit: transit,
@@ -413,6 +442,30 @@ impl SolarTime {
             next_solar: next_solar,
             approximate_transit: approximate_transit,
         })
+    }
+
+    fn hour_angle(solar_time: SolarTime, angle: f64, after_transit: bool) -> f64 {
+        corrected_hour_angle(
+            solar_time.approximate_transit,
+            angle,
+            solar_time.observer,
+            after_transit,
+            solar_time.solar.apparent_side_realtime,
+            solar_time.solar.right_ascension,
+            solar_time.prev_solar.right_ascension,
+            solar_time.next_solar.right_ascension,
+            solar_time.solar.declination,
+            solar_time.prev_solar.declination,
+            solar_time.next_solar.declination,
+        )
+    }
+
+    fn afternoon(solar: SolarTime, shadow_length: ShadowLength) -> f64 {
+        let tangent = (solar.observer.latitude - solar.solar.declination).abs();
+        let inverse = (shadow_length as i32) as f64 + (to_radius(tangent)).tan();
+        let angle = to_degrees((1.0 / inverse).atan());
+
+        Self::hour_angle(solar, angle, true)
     }
 }
 
@@ -448,30 +501,26 @@ impl TimeComponent {
         TimeComponent {
             hours: hours,
             minutes: minutes,
-            seconds: seconds
+            seconds: seconds,
         }
     }
 
     fn is_valid_time(&self) -> bool {
-        !(
-            self.hours == -1 &&
-            self.minutes == -1 &&
-            self.seconds == -1
-        )
+        !(self.hours == -1 && self.minutes == -1 && self.seconds == -1)
     }
 
     fn from_f64(value: f64) -> Self {
         let hours = value.floor() as i32;
         let minutes = ((value - hours as f64) * 60.0).floor() as i32;
-        let seconds = ((value - (hours as f64 + minutes as f64 / 60.0)) * 60.0 * 60.0).floor() as i32;
+        let seconds =
+            ((value - (hours as f64 + minutes as f64 / 60.0)) * 60.0 * 60.0).floor() as i32;
         TimeComponent {
             hours: hours,
             minutes: minutes,
-            seconds: seconds
+            seconds: seconds,
         }
     }
 }
-
 
 struct PrayerTimes {
     fajr: TimeComponent,
@@ -480,6 +529,162 @@ struct PrayerTimes {
     asr: TimeComponent,
     maghrib: TimeComponent,
     isha: TimeComponent,
+}
+
+impl PrayerTimes {
+    fn init() -> Self {
+        PrayerTimes {
+            fajr: TimeComponent {
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+            },
+            sunrise: TimeComponent {
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+            },
+            dhuhr: TimeComponent {
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+            },
+            asr: TimeComponent {
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+            },
+            maghrib: TimeComponent {
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+            },
+            isha: TimeComponent {
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+            },
+        }
+    }
+
+    fn new(
+        coordinates: Coordinates,
+        time: TimeComponent,
+        date: DateComponent,
+        params: CalculationParameters,
+    ) -> Result<Self, Box<dyn Error>> {
+        let solar_time = SolarTime::new(time, &date, coordinates)?;
+        let mut transit: Option<DateTime<Utc>> = None;
+        let mut sunrise: Option<DateTime<Utc>> = None;
+        let mut sunset: Option<DateTime<Utc>> = None;
+
+        let maybe_transit_time = TimeComponent::from_f64(solar_time.transit);
+        let maybe_sunrise_time = TimeComponent::from_f64(solar_time.sunrise);
+        let maybe_sunset_time = TimeComponent::from_f64(solar_time.sunset);
+
+        if maybe_transit_time.is_valid_time() {
+            transit = make_utc_datetime(maybe_transit_time, &date);
+        }
+
+        if maybe_sunrise_time.is_valid_time() {
+            sunrise = make_utc_datetime(maybe_sunrise_time, &date);
+        }
+
+        if maybe_sunset_time.is_valid_time() {
+            sunset = make_utc_datetime(maybe_sunset_time, &date);
+        }
+
+        if let (Some(transit), Some(sunrise), Some(sunset)) = (transit, sunrise, sunset) {
+            // temp_prayer_times.dhuhr = transit;
+            // temp_prayer_times.sunrise = sunrise;
+            // temp_prayer_times.sunset = sunset;
+        }
+
+        Err(anyhow!("not implemented").into())
+    }
+
+    fn season_adjusted_morning_twilight(
+        latitude: f64,
+        day: i32,
+        year: i32,
+        sunrise: DateTime<Utc>,
+    ) -> DateTime<Utc> {
+        let a = 75.0 + ((28.65 / 55.0) * latitude.abs());
+        let b = 75.0 + ((19.44 / 55.0) * latitude.abs());
+        let c = 75.0 + ((32.74 / 55.0) * latitude.abs());
+        let d = 75.0 + ((48.10 / 55.0) * latitude.abs());
+
+        let mut adjustment: f64 = 0.0;
+        let dyy = Self::days_since_solstice(day, year, latitude);
+        if dyy < 91 {
+            adjustment = a + (b - a) / 91.0 * dyy as f64;
+        } else if dyy < 137 {
+            adjustment = b + (c - b) / 46.0 * (dyy - 91) as f64;
+        } else if dyy < 183 {
+            adjustment = c + (d - c) / 46.0 * (dyy - 137) as f64;
+        } else if dyy < 229 {
+            adjustment = d + (c - d) / 46.0 * (dyy - 183) as f64;
+        } else if dyy < 275 {
+            adjustment = c + (b - c) / 46.0 * (dyy - 229) as f64;
+        } else {
+            adjustment = b + (a - b) / 91.0 * (dyy - 275) as f64;
+        }
+
+        let final_adjustment = (adjustment * 60.0).round();
+        sunrise + Duration::seconds(-final_adjustment as i64)
+    }
+
+    fn season_adjusted_evening_twilight(
+        latitude: f64,
+        day: i32,
+        year: i32,
+        sunrise: DateTime<Utc>,
+    ) -> DateTime<Utc> {
+        let a = 75.0 + ((25.6 / 55.0) * latitude.abs());
+        let b = 75.0 + ((2.05 / 55.0) * latitude.abs());
+        let c = 75.0 + ((9.21 / 55.0) * latitude.abs());
+        let d = 75.0 + ((6.14 / 55.0) * latitude.abs());
+
+        let mut adjustment: f64 = 0.0;
+        let dyy = Self::days_since_solstice(day, year, latitude);
+        if dyy < 91 {
+            adjustment = a + (b - a) / 91.0 * dyy as f64;
+        } else if dyy < 137 {
+            adjustment = b + (c - b) / 46.0 * (dyy - 91) as f64;
+        } else if dyy < 183 {
+            adjustment = c + (d - c) / 46.0 * (dyy - 137) as f64;
+        } else if dyy < 229 {
+            adjustment = d + (c - d) / 46.0 * (dyy - 183) as f64;
+        } else if dyy < 275 {
+            adjustment = c + (b - c) / 46.0 * (dyy - 229) as f64;
+        } else {
+            adjustment = b + (a - b) / 91.0 * (dyy - 275) as f64;
+        }
+
+        let final_adjustment = (adjustment * 60.0).round();
+        sunrise + Duration::seconds(-final_adjustment as i64)
+    }
+
+    fn days_since_solstice(day_of_year: i32, year: i32, latitude: f64) -> i32 {
+        let mut days_since_solistice = 0;
+        let northern_offset = 10;
+        let leap_year = is_leap_year(year);
+        let southern_offset = if leap_year { 173 } else { 172 };
+        let days_in_year = if leap_year { 366 } else { 365 };
+
+        if latitude >= 0.0 {
+            days_since_solistice = day_of_year + northern_offset;
+            if days_since_solistice >= days_in_year {
+                days_since_solistice = days_since_solistice - days_in_year;
+            }
+        } else {
+            days_since_solistice = day_of_year - southern_offset;
+            if days_since_solistice < 0 {
+                days_since_solistice = days_since_solistice + days_in_year;
+            }
+        }
+        days_since_solistice
+    }
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -714,6 +919,14 @@ fn julian_day(year: i32, month: i32, day: i32) -> JulianDay {
 fn julian_century(jd: f64) -> f64 {
     /* Equation from Astronomical Algorithms page 163 */
     (jd - 2451545.0) / 36525.0
+}
+
+fn make_utc_datetime(time: TimeComponent, date: &DateComponent) -> Option<DateTime<Utc>> {
+    todo!()
+}
+
+fn is_leap_year(year: i32) -> bool {
+    year % 4 == 0 && !(year % 100 == 0 && year % 400 != 0)
 }
 
 /* -------------------------------------------------------------------------------------------------
