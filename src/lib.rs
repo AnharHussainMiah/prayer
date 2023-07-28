@@ -445,11 +445,11 @@ impl SolarTime {
         })
     }
 
-    fn hour_angle(solar_time: SolarTime, angle: f64, after_transit: bool) -> f64 {
+    fn hour_angle(solar_time: &SolarTime, angle: f64, after_transit: bool) -> f64 {
         corrected_hour_angle(
             solar_time.approximate_transit,
             angle,
-            solar_time.observer,
+            solar_time.observer.clone(),
             after_transit,
             solar_time.solar.apparent_side_realtime,
             solar_time.solar.right_ascension,
@@ -461,7 +461,7 @@ impl SolarTime {
         )
     }
 
-    fn afternoon(solar: SolarTime, shadow_length: ShadowLength) -> f64 {
+    fn afternoon(solar: &SolarTime, shadow_length: ShadowLength) -> f64 {
         let tangent = (solar.observer.latitude - solar.solar.declination).abs();
         let inverse = (shadow_length as i32) as f64 + (to_radius(tangent)).tan();
         let angle = to_degrees((1.0 / inverse).atan());
@@ -510,7 +510,7 @@ impl TimeComponent {
         !(self.hours == -1 && self.minutes == -1 && self.seconds == -1)
     }
 
-    fn from_f64(value: f64) -> Self {
+    fn from_f64(value: &f64) -> Self {
         let hours = value.floor() as i32;
         let minutes = ((value - hours as f64) * 60.0).floor() as i32;
         let seconds =
@@ -587,9 +587,9 @@ impl PrayerTimes {
         let mut sunrise: Option<DateTime<Utc>> = None;
         let mut sunset: Option<DateTime<Utc>> = None;
 
-        let maybe_transit_time = TimeComponent::from_f64(solar_time.transit);
-        let maybe_sunrise_time = TimeComponent::from_f64(solar_time.sunrise);
-        let maybe_sunset_time = TimeComponent::from_f64(solar_time.sunset);
+        let maybe_transit_time = TimeComponent::from_f64(&solar_time.transit);
+        let maybe_sunrise_time = TimeComponent::from_f64(&solar_time.sunrise);
+        let maybe_sunset_time = TimeComponent::from_f64(&solar_time.sunset);
 
         if maybe_transit_time.is_valid_time() {
             transit = self::to_maybe_utc_datetime(maybe_transit_time, &date);
@@ -614,8 +614,8 @@ impl PrayerTimes {
             let tomorrow_sunrise = sunrise + Duration::days(1);
             let night = tomorrow_sunrise - sunset;
 
-            let maybe_fajr_time = TimeComponent::from_f64(SolarTime::hour_angle(
-                solar_time,
+            let maybe_fajr_time = TimeComponent::from_f64(&SolarTime::hour_angle(
+                &solar_time,
                 -params.fajr_angle,
                 false,
             ));
@@ -660,7 +660,15 @@ impl PrayerTimes {
             /*--------------------------------------------------------------------------------------
             | Asr
             --------------------------------------------------------------------------------------*/
-
+            let maybe_asr_time = TimeComponent::from_f64(
+                &SolarTime::afternoon(
+                    &solar_time,
+                    get_shadow_length(params.madhab)
+                )
+            );
+            if maybe_asr_time.is_valid_time() {
+                temp_asr = self::to_maybe_utc_datetime(maybe_asr_time, &date);
+            }
             /*--------------------------------------------------------------------------------------
             | Maghrib
             --------------------------------------------------------------------------------------*/
