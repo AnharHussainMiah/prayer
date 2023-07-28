@@ -670,8 +670,31 @@ impl PrayerTimes {
             --------------------------------------------------------------------------------------*/
             temp_maghrib = Some(sunset);
             /*--------------------------------------------------------------------------------------
-            | Isha
+            | Isha: Isha calculation with check against safe value
             --------------------------------------------------------------------------------------*/
+            if params.isha_interval > 0 && temp_maghrib != None {
+                let adusted_datetime = temp_maghrib.unwrap() + Duration::seconds((params.isha_interval * 60) as i64);
+                temp_isha = Some(adusted_datetime);
+            } else {
+                let maybe_isha_time = TimeComponent::from_f64(
+                    &SolarTime::hour_angle(
+                        &solar_time,
+                        -&params.isha_angle,
+                        true
+                    )
+                );
+                if maybe_isha_time.is_valid_time() {
+                    temp_isha = self::to_maybe_utc_datetime(maybe_isha_time, &date);
+                }
+
+                if params.calculation_method == CalculationMethod::MoonSightingCommittee &&
+                    coordinates.latitude >= 55.0 
+                {
+                    // TODO LINE: J 112
+                    let night_fraction = night.num_seconds() / 7000;
+
+                }
+            }
         }
 
         Err(anyhow!("not implemented").into())
@@ -739,7 +762,11 @@ impl PrayerTimes {
         sunrise + Duration::seconds(-final_adjustment as i64)
     }
 
-    fn days_since_solstice(day_of_year: i32, year: i32, latitude: f64) -> i32 {
+    fn days_since_solstice(
+        day_of_year: i32, 
+        year: i32, 
+        latitude: f64
+    ) -> i32 {
         let mut days_since_solistice = 0;
         let northern_offset = 10;
         let leap_year = is_leap_year(year);
