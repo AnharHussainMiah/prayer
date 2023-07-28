@@ -20,6 +20,7 @@ enum Madhab {
     Hanafi,
 }
 
+#[derive(PartialEq)]
 enum CalculationMethod {
     MuslimWorldLeague,
     Egyptian,
@@ -81,7 +82,7 @@ struct NightPortions {
 }
 
 impl NightPortions {
-    fn get(parameters: CalculationParameters) -> Self {
+    fn get(parameters: &CalculationParameters) -> Self {
         match parameters.high_latitude_rule {
             HighLatitudeRule::MiddleOfTheNight => {
                 return NightPortions {
@@ -354,7 +355,7 @@ impl SolarTime {
     fn new(
         time: TimeComponent,
         date: &DateComponent,
-        coordinates: Coordinates,
+        coordinates: &Coordinates,
     ) -> Result<Self, Box<dyn Error>> {
         let maybe_datetime = NaiveDate::from_ymd_opt(date.year, date.month as u32, date.day as u32)
             .ok_or(anyhow!("oops"))?
@@ -573,7 +574,15 @@ impl PrayerTimes {
         date: DateComponent,
         params: CalculationParameters,
     ) -> Result<Self, Box<dyn Error>> {
-        let solar_time = SolarTime::new(time, &date, coordinates)?;
+        let solar_time = SolarTime::new(time, &date, &coordinates)?;
+
+        let mut temp_fajr: Option<DateTime<Utc>> = None;
+        let mut temp_sunrise: Option<DateTime<Utc>> = None;
+        let mut temp_dhuhr: Option<DateTime<Utc>> = None;
+        let mut temp_asr: Option<DateTime<Utc>> = None;
+        let mut temp_maghrib: Option<DateTime<Utc>> = None;
+        let mut temp_isha: Option<DateTime<Utc>> = None;
+
         let mut transit: Option<DateTime<Utc>> = None;
         let mut sunrise: Option<DateTime<Utc>> = None;
         let mut sunset: Option<DateTime<Utc>> = None;
@@ -583,21 +592,82 @@ impl PrayerTimes {
         let maybe_sunset_time = TimeComponent::from_f64(solar_time.sunset);
 
         if maybe_transit_time.is_valid_time() {
-            transit = make_utc_datetime(maybe_transit_time, &date);
+            transit = self::to_maybe_utc_datetime(maybe_transit_time, &date);
         }
 
         if maybe_sunrise_time.is_valid_time() {
-            sunrise = make_utc_datetime(maybe_sunrise_time, &date);
+            sunrise = to_maybe_utc_datetime(maybe_sunrise_time, &date);
         }
 
         if maybe_sunset_time.is_valid_time() {
-            sunset = make_utc_datetime(maybe_sunset_time, &date);
+            sunset = to_maybe_utc_datetime(maybe_sunset_time, &date);
         }
 
         if let (Some(transit), Some(sunrise), Some(sunset)) = (transit, sunrise, sunset) {
-            // temp_prayer_times.dhuhr = transit;
-            // temp_prayer_times.sunrise = sunrise;
-            // temp_prayer_times.sunset = sunset;
+            // temp_dhuhr = transit;
+            // temp_sunrise = sunrise;
+            // temp_maghrib = sunset;
+
+            /*--------------------------------------------------------------------------------------
+            | Fajr
+            --------------------------------------------------------------------------------------*/
+            let tomorrow_sunrise = sunrise + Duration::days(1);
+            let night = tomorrow_sunrise - sunset;
+
+            let maybe_fajr_time = TimeComponent::from_f64(SolarTime::hour_angle(
+                solar_time,
+                -params.fajr_angle,
+                false,
+            ));
+
+            if maybe_fajr_time.is_valid_time() {
+                temp_fajr = self::to_maybe_utc_datetime(maybe_fajr_time, &date);
+            }
+
+            if params.calculation_method == CalculationMethod::MoonSightingCommittee
+                && coordinates.latitude >= 55.0
+            {
+                let adjusted_time = sunrise + Duration::seconds((-1.0 * (night.num_seconds() as f64/7000.0)) as i64);
+                temp_fajr = Some(adjusted_time);
+            }
+
+            let night_portions = NightPortions::get(&params);
+            let mut safe_fajr: Option<DateTime<Utc>> = None;
+            
+            if params.calculation_method == CalculationMethod::MoonSightingCommittee {
+                safe_fajr = Some(Self::season_adjusted_morning_twilight(
+                    coordinates.latitude,
+                    date.day,
+                    date.year,
+                    sunrise));
+            } else {
+                let night_fraction = -1.0 * (night_portions.fajr * night.num_seconds() as f64 / 1000.0);
+                safe_fajr = Some(sunrise + Duration::seconds(night_fraction as i64));
+            }
+            
+            if temp_fajr != None || (temp_fajr != None && safe_fajr != None && temp_fajr < safe_fajr) {
+                temp_fajr = safe_fajr;
+            }
+
+            /*--------------------------------------------------------------------------------------
+            | Sunrise
+            --------------------------------------------------------------------------------------*/
+
+            /*--------------------------------------------------------------------------------------
+            | Dhuhr
+            --------------------------------------------------------------------------------------*/
+
+            /*--------------------------------------------------------------------------------------
+            | Asr
+            --------------------------------------------------------------------------------------*/
+
+            /*--------------------------------------------------------------------------------------
+            | Maghrib
+            --------------------------------------------------------------------------------------*/
+
+            /*--------------------------------------------------------------------------------------
+            | Isha
+            --------------------------------------------------------------------------------------*/
         }
 
         Err(anyhow!("not implemented").into())
@@ -921,7 +991,11 @@ fn julian_century(jd: f64) -> f64 {
     (jd - 2451545.0) / 36525.0
 }
 
-fn make_utc_datetime(time: TimeComponent, date: &DateComponent) -> Option<DateTime<Utc>> {
+fn to_maybe_utc_datetime(time: TimeComponent, date: &DateComponent) -> Option<DateTime<Utc>> {
+    todo!()
+}
+
+fn to_utc_datetime(time: TimeComponent, date: &DateComponent) -> DateTime<Utc> {
     todo!()
 }
 
