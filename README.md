@@ -14,6 +14,64 @@ Adhan is based on the following port:
 
 - C (C99) [(Usage and examples)](https://github.com/radcheb/Adhan/tree/master/C/adhan)
 
+## Usage
+
+Add the library dependency into your `Cargo.toml` file for example:
+
+```toml
+[dependencies]
+prayer = { git "https://github.com/AnharHussainMiah/prayer.git" }
+```
+
+Next import the library:
+
+```rust
+use prayer::{
+    CalculationMethod, CalculationParameters, Coordinates, DateComponent, PrayerTimes,
+    TimeComponent,
+};
+```
+
+A basic example of computing the prayer times using a predefined `CalculationMethod` :
+
+```rust
+if let Ok(prayers) = prayer::PrayerTimes::new(
+        Coordinates::new(51.509865, -0.118092), // latitude, longitude
+        TimeComponent::new(0, 0, 0),            // hours, minutes, seconds
+        DateComponent::new(1, 8, 2023),         // day, month, year
+        CalculationParameters::by_method(CalculationMethod::MuslimWorldLeague),
+    ) {
+        println!(
+            "Fajr -> {}:{}:{}",
+            prayers.fajr.hours, prayers.fajr.minutes, prayers.fajr.seconds
+        );
+        println!(
+            "Sunrise -> {}:{}:{}",
+            prayers.sunrise.hours, prayers.sunrise.minutes, prayers.sunrise.seconds
+        );
+        println!(
+            "Dhuhr -> {}:{}:{}",
+            prayers.dhuhr.hours, prayers.dhuhr.minutes, prayers.dhuhr.seconds
+        );
+        println!(
+            "Asr -> {}:{}:{}",
+            prayers.asr.hours, prayers.asr.minutes, prayers.asr.seconds
+        );
+        println!(
+            "Maghrib -> {}:{}:{}",
+            prayers.maghrib.hours, prayers.maghrib.minutes, prayers.maghrib.seconds
+        );
+        println!(
+            "isha -> {}:{}:{}",
+            prayers.isha.hours, prayers.isha.minutes, prayers.isha.seconds
+        );
+    }
+```
+
+### Using custom calculation parameters
+
+[TODO]
+
 ## Contributing
 
 Prayer is made publicly available to provide a well tested and well documented library for Islamic prayer times to all
