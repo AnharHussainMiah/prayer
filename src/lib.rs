@@ -1,6 +1,6 @@
 // https://github.com/radcheb/Adhan/tree/master/C/adhan/src
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc, Local, TimeZone};
 use std::error::Error;
 
 const PI: f64 = 3.14159265358979323846;
@@ -15,13 +15,13 @@ enum Prayers {
     Isha,
 }
 
-enum Madhab {
+pub enum Madhab {
     Shafi,
     Hanafi,
 }
 
 #[derive(PartialEq)]
-enum CalculationMethod {
+pub enum CalculationMethod {
     MuslimWorldLeague,
     Egyptian,
     Karachi,
@@ -36,7 +36,7 @@ enum CalculationMethod {
     Other,
 }
 
-enum HighLatitudeRule {
+pub enum HighLatitudeRule {
     MiddleOfTheNight,
     SeventhOfTheNight,
     TwilightAngle,
@@ -47,7 +47,7 @@ enum ShadowLength {
     Double = 2,
 }
 
-struct PrayerAdjustments {
+pub struct PrayerAdjustments {
     fajr: i32,
     sunrise: i32,
     dhuhr: i32,
@@ -106,14 +106,14 @@ impl NightPortions {
     }
 }
 
-struct CalculationParameters {
-    calculation_method: CalculationMethod,
-    fajr_angle: f64,
-    isha_angle: f64,
-    isha_interval: i32,
-    madhab: Madhab,
-    high_latitude_rule: HighLatitudeRule,
-    prayer_adjustments: PrayerAdjustments,
+pub struct CalculationParameters {
+    pub calculation_method: CalculationMethod,
+    pub fajr_angle: f64,
+    pub isha_angle: f64,
+    pub isha_interval: i32,
+    pub madhab: Madhab,
+    pub high_latitude_rule: HighLatitudeRule,
+    pub prayer_adjustments: PrayerAdjustments,
 }
 
 impl CalculationParameters {
@@ -129,7 +129,7 @@ impl CalculationParameters {
         )
     }
 
-    fn with_parameters(
+    pub fn with_parameters(
         calculation_method: CalculationMethod,
         fajr_angle: f64,
         isha_angle: f64,
@@ -149,7 +149,7 @@ impl CalculationParameters {
         }
     }
 
-    fn by_method(method: CalculationMethod) -> Self {
+    pub fn by_method(method: CalculationMethod) -> Self {
         match method {
             CalculationMethod::MuslimWorldLeague => {
                 return CalculationParameters {
@@ -288,13 +288,13 @@ impl CalculationParameters {
 }
 
 #[derive(Clone)]
-struct Coordinates {
-    latitude: f64,
-    longitude: f64,
+pub struct Coordinates {
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 impl Coordinates {
-    fn new(latitude: f64, longitude: f64) -> Self {
+    pub fn new(latitude: f64, longitude: f64) -> Self {
         Coordinates {
             latitude: latitude,
             longitude: longitude,
@@ -485,20 +485,30 @@ fn closest_angle(angle: f64) -> f64 {
     return angle - (360.0 * (angle / 360.0).round());
 }
 
-struct TimeComponent {
-    hours: i32,
-    minutes: i32,
-    seconds: i32,
+pub struct TimeComponent {
+    pub hours: i32,
+    pub minutes: i32,
+    pub seconds: i32,
 }
 
-struct DateComponent {
-    day: i32,
-    month: i32,
-    year: i32,
+pub struct DateComponent {
+    pub day: i32,
+    pub month: i32,
+    pub year: i32,
+}
+
+impl DateComponent {
+    pub fn new(day: i32, month: i32, year: i32) -> Self {
+        DateComponent {
+            day: day,
+            month: month,
+            year: year
+        }
+    }
 }
 
 impl TimeComponent {
-    fn new(hours: i32, minutes: i32, seconds: i32) -> Self {
+    pub fn new(hours: i32, minutes: i32, seconds: i32) -> Self {
         TimeComponent {
             hours: hours,
             minutes: minutes,
@@ -523,17 +533,17 @@ impl TimeComponent {
     }
 }
 
-struct PrayerTimes {
-    fajr: TimeComponent,
-    sunrise: TimeComponent,
-    dhuhr: TimeComponent,
-    asr: TimeComponent,
-    maghrib: TimeComponent,
-    isha: TimeComponent,
+pub struct PrayerTimes {
+    pub fajr: TimeComponent,
+    pub sunrise: TimeComponent,
+    pub dhuhr: TimeComponent,
+    pub asr: TimeComponent,
+    pub maghrib: TimeComponent,
+    pub isha: TimeComponent,
 }
 
 impl PrayerTimes {
-    fn init() -> Self {
+    pub fn init() -> Self {
         PrayerTimes {
             fajr: TimeComponent {
                 hours: 0,
@@ -568,13 +578,24 @@ impl PrayerTimes {
         }
     }
 
-    fn new(
+    pub fn new(
         coordinates: Coordinates,
         time: TimeComponent,
         date: DateComponent,
         params: CalculationParameters,
     ) -> Result<Self, Box<dyn Error>> {
         let solar_time = SolarTime::new(time, &date, &coordinates)?;
+
+        /*------------------------------------------------------------------------------------------
+        | WARNING: we have made some assumptions:
+        | (a) the night portion calulations has been based on seconds, it it not clear from the C
+        | source code if that was the actual unit intended as the type is vague LONG
+        | 
+        | (b) we do some time duration comparisions, however in the C, those types are null checked
+        | in rust we use a Option<DateTime<Utc>>, while it compiles, it might not be doing the
+        | comparision we thing it does, so we may need to do some matching prior to testing the 
+        | comparision. One to keep an eye on.
+        ------------------------------------------------------------------------------------------*/
 
         let mut temp_fajr: Option<DateTime<Utc>> = None;
         let mut temp_sunrise: Option<DateTime<Utc>> = None;
@@ -690,14 +711,87 @@ impl PrayerTimes {
                 if params.calculation_method == CalculationMethod::MoonSightingCommittee &&
                     coordinates.latitude >= 55.0 
                 {
-                    // TODO LINE: J 112
                     let night_fraction = night.num_seconds() / 7000;
+                    temp_isha = Some(sunset + Duration::seconds(night_fraction));
+                }
+                let mut safe_isha: Option<DateTime<Utc>> = None;
+                if params.calculation_method == CalculationMethod::MoonSightingCommittee {
+                    safe_isha = Some(Self::season_adjusted_evening_twilight(
+                        coordinates.latitude,
+                        date.day,
+                        date.year,
+                        sunset
+                    ));
+                } else {
+                    let night_fraction = ( night_portions.isha as i64 * night.num_seconds() ) / 1000;
+                    safe_isha = Some(sunset + Duration::seconds(night_fraction));
+                }
 
+                if temp_isha == None || (safe_isha != None && temp_isha != None && temp_isha > safe_isha ) {
+                    temp_isha = safe_isha;
                 }
             }
+            /*--------------------------------------------------------------------------------------
+            | Handle final adjustments
+            --------------------------------------------------------------------------------------*/
+            let mut dhuhr_offset_in_minutes = 0;
+            if params.calculation_method == CalculationMethod::MoonSightingCommittee {
+                // Moonsighting Committee requires 5 minutes for the sun to pass
+                // the zenith and dhuhr to enter
+                dhuhr_offset_in_minutes = 5;
+            } else if 
+                params.calculation_method == CalculationMethod::UmmAlQura ||
+                params.calculation_method == CalculationMethod::Gulf ||
+                params.calculation_method == CalculationMethod::Qatar {
+                dhuhr_offset_in_minutes = 0;
+            } else {
+                dhuhr_offset_in_minutes = 1;
+            }
+
+            let mut maghrib_offset_in_minutes = 0;
+            if params.calculation_method == CalculationMethod::MoonSightingCommittee {
+                // Moonsighting Committee adds 3 minutes to sunset time to account for light refraction
+                maghrib_offset_in_minutes = 3;
+            } else {
+                maghrib_offset_in_minutes = 0;
+            }
+
+            if temp_asr == None {
+                // if we don't have all prayer times then initialization failed
+                return Err(anyhow!("prayer times initialisation failed").into());
+            }
+            if let Some(x) = temp_fajr {
+                temp_fajr = Some(x + Duration::minutes(params.prayer_adjustments.fajr as i64));
+            }
+            if let Some(x) = temp_sunrise {
+                temp_sunrise = Some(x + Duration::minutes(params.prayer_adjustments.sunrise as i64));
+            }
+            if let Some(x) = temp_dhuhr {
+                temp_dhuhr = Some(x + Duration::minutes((params.prayer_adjustments.dhuhr + dhuhr_offset_in_minutes) as i64));
+            }
+            if let Some(x) = temp_asr {
+                temp_asr = Some(x + Duration::minutes(params.prayer_adjustments.asr as i64));
+            }
+            if let Some(x) = temp_maghrib {
+                temp_maghrib = Some(x + Duration::minutes((params.prayer_adjustments.maghrib + maghrib_offset_in_minutes) as i64));
+            }
+            if let Some(x) = temp_isha {
+                temp_isha = Some(x + Duration::minutes(params.prayer_adjustments.isha as i64));
+            }
+
+            return Ok(
+                PrayerTimes {
+                    fajr: self::datetime_to_timecomponent(temp_fajr),
+                    sunrise: self::datetime_to_timecomponent(temp_sunrise),
+                    dhuhr: self::datetime_to_timecomponent(temp_dhuhr),
+                    asr: self::datetime_to_timecomponent(temp_asr),
+                    maghrib: self::datetime_to_timecomponent(temp_maghrib),
+                    isha: self::datetime_to_timecomponent(temp_isha),
+                }
+            )
         }
 
-        Err(anyhow!("not implemented").into())
+        Err(anyhow!("prayer times initialisation failed").into())
     }
 
     fn season_adjusted_morning_twilight(
@@ -1011,32 +1105,37 @@ fn julian_day(year: i32, month: i32, day: i32) -> JulianDay {
     self::_julian_day(year, month, day, 0.0)
 }
 
-// fn julianDay2(const struct tm* date) -> f64 {
-//     return _julianDay(date->tm_year + 1900,
-//                      date->tm_mon + 1, date->tm_mday,
-//                      date->tm_hour + date->tm_min / 60.0);
-//}
-
 fn julian_century(jd: f64) -> f64 {
     /* Equation from Astronomical Algorithms page 163 */
     (jd - 2451545.0) / 36525.0
 }
 
 fn to_maybe_utc_datetime(time: TimeComponent, date: &DateComponent) -> Option<DateTime<Utc>> {
-    todo!()
-}
+    let maybe_datetime = NaiveDate::from_ymd_opt(date.year, date.month as u32, date.day as u32)
+            .ok_or(anyhow!("oops")).ok()?
+            .and_hms_opt(time.hours as u32, time.minutes as u32, time.seconds as u32)
+            .ok_or(anyhow!("on no")).ok()?;
+    
+    let datetime: DateTime<Utc> = TimeZone::from_utc_datetime(&Utc, &maybe_datetime);
 
-fn to_utc_datetime(time: TimeComponent, date: &DateComponent) -> DateTime<Utc> {
-    todo!()
+    Some(datetime)
 }
 
 fn is_leap_year(year: i32) -> bool {
     year % 4 == 0 && !(year % 100 == 0 && year % 400 != 0)
 }
 
-/* -------------------------------------------------------------------------------------------------
-    lib exports
---------------------------------------------------------------------------------------------------*/
-pub fn ComputePrayers() -> String {
-    "TODO".to_string()
+fn datetime_to_timecomponent(date: Option<DateTime<Utc>>) -> TimeComponent {
+    match date {
+        Some(date) => TimeComponent {
+            hours: date.hour() as i32,
+            minutes: date.minute() as i32,
+            seconds: date.second() as i32
+        },
+        None => TimeComponent {
+            hours: 0,
+            minutes: 0,
+            seconds: 0
+        }
+    }
 }
